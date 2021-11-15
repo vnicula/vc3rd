@@ -13,6 +13,7 @@ from torch import Tensor
 from torch.nn.functional import normalize, pad
 
 from parallel_wavegan.utils import load_model
+from parallel_wavegan.bin.preprocess import logmelfilterbank
 from data import Wav2Mel
 
 
@@ -34,8 +35,8 @@ def get_embed(encoder: nn.Module, mel: Tensor) -> Tensor:
 
 
 def save_spect(save_path, spec):
-    fig, ax = plt.subplots(figsize=(10, 2))
-    im = ax.imshow(spec, aspect="auto", origin="lower",
+    fig, ax = plt.subplots(figsize=(10, 12))
+    im = ax.imshow(spec.T, aspect="auto", origin="lower",
                    interpolation='none')
     plt.colorbar(im, ax=ax)
     fig.savefig(save_path)
@@ -73,8 +74,15 @@ def main(
     tgt, tgt_sr = torchaudio.load(target)
     src_mel = wav2mel(src, src_sr).to(device)
     tgt_mel = wav2mel(tgt, tgt_sr).to(device)
+
+    # src_mel = torch.from_numpy(logmelfilterbank(
+    #     src.view(-1).numpy(), src_sr, fft_size=2048, hop_size=200, win_length=800, fmin=50)).to(device)
+    # tgt_mel = torch.from_numpy(logmelfilterbank(
+    #     tgt.view(-1).numpy(), tgt_sr, fft_size=2048, hop_size=200, win_length=800, fmin=50)).to(device)
+
     save_spect(os.path.splitext(source)[0]+'.jpg', src_mel.cpu())
     save_spect(os.path.splitext(target)[0]+'.jpg', tgt_mel.cpu())
+
     src_emb = get_embed(model.speaker_encoder, src_mel)
     tgt_emb = get_embed(model.speaker_encoder, tgt_mel)
     src_mel, len_pad = pad_seq(src_mel)
@@ -82,13 +90,15 @@ def main(
 
     with torch.no_grad():
         _, mel, _ = model(src_mel, src_emb, tgt_emb)
+    # mel = src_mel
     mel = mel[0, :, :] if len_pad == 0 else mel[0, :-len_pad, :]
     print('Converted mel shape: ', mel.shape)
     save_spect(os.path.splitext(output)[0]+'.jpg', mel.cpu().numpy())
+    mel = (mel - 0.8) / 0.2
 
     with torch.no_grad():
         # wav = vocoder.generate([mel])[0].data.cpu().numpy()
-        wav = vocoder.inference(c=mel, normalize_before=True)
+        wav = vocoder.inference(c=mel, normalize_before=False)
         print('Wave shape: ', wav.shape)
         wav = wav.view(-1).cpu().numpy()
     sf.write(output, wav.astype(np.float32), wav2mel.sample_rate)

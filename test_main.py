@@ -12,7 +12,7 @@ import torch.nn as nn
 import torchaudio
 from torch import Tensor
 from torch.nn.functional import pad
-
+from parallel_wavegan.utils import load_model
 from data import Wav2Mel
 
 CHANNELS = 1
@@ -48,6 +48,14 @@ def get_embed(encoder: nn.Module, mel: Tensor) -> Tensor:
     emb = encoder(mel[None, :])
     return emb
 
+def load_vocoder(vocoder_path):
+    # load vocoder
+    vocoder = load_model(vocoder_path)
+    vocoder.remove_weight_norm()
+    vocoder = vocoder.eval()
+    # print('vocoder', vocoder)
+    return vocoder    
+
 p = pyaudio.PyAudio()
 for i in range(p.get_device_count()):
     print(p.get_device_info_by_index(i))
@@ -57,10 +65,11 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # device = "cpu"
 print(device)
 model = torch.jit.load('model.pt').to(device)
-vocoder = torch.jit.load('vocoder.pt').to(device)
+# vocoder = torch.jit.load('vocoder.pt').to(device)
+vocoder = load_vocoder("H:/work/vconv/pretrained_model/arctic_slt_parallel_wavegan.v1/checkpoint-400000steps.pkl").to(device)
 wav2mel = Wav2Mel()
 
-tgt, tgt_sr = torchaudio.load('p225_001.wav')
+tgt, tgt_sr = torchaudio.load('wavs/p225_001.wav')
 tgt_mel = wav2mel(tgt, tgt_sr).to(device)
 tgt_emb = get_embed(model.speaker_encoder, tgt_mel)
 
@@ -72,13 +81,16 @@ def callback(in_data, frame_count, time_info, status):
     src_emb = get_embed(model.speaker_encoder, src_mel)
     print('mel shape:', src_mel.shape)
     src_mel, len_pad = pad_seq(src_mel)
-    # src_mel = src_mel[None, :]
-    # with torch.no_grad():
-    #     _, mel, _ = model(src_mel, src_emb, tgt_emb)
-    # mel = mel[0, :, :] if len_pad == 0 else mel[0, :-len_pad, :]
+    src_mel = src_mel[None, :]
+    with torch.no_grad():
+        _, mel, _ = model(src_mel, src_emb, tgt_emb)
+    mel = mel[0, :, :] if len_pad == 0 else mel[0, :-len_pad, :]
     with torch.no_grad():
         # wav = vocoder.generate([mel])[0].data.cpu().numpy()
-        wav = vocoder.generate([src_mel])[0].data.cpu().numpy()
+        # wav = vocoder.generate([src_mel])[0].data.cpu().numpy()
+        wav = vocoder.inference(c=mel, normalize_before=False)
+        print('Wave shape: ', wav.shape)
+        wav = wav.view(-1).cpu().numpy()
 
     return (wav[:attr_d["segment_size"]], pyaudio.paContinue)
 
