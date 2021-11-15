@@ -15,7 +15,8 @@ class Wav2Mel(torch.nn.Module):
         sil_threshold: float = 1.0,
         sil_duration: float = 0.1,
         fft_window_ms: float = 50.0,
-        fft_hop_ms: float = 12.5,
+        # fft_hop_ms: float = 12.5,
+        fft_hop_ms: float = 16,
         n_fft: int = 2048,
         f_min: float = 50.0,
         n_mels: int = 80,
@@ -52,7 +53,7 @@ class Wav2Mel(torch.nn.Module):
         )
 
     def forward(self, wav_tensor: torch.Tensor, sample_rate: int) -> torch.Tensor:
-        wav_tensor = self.sox_effects(wav_tensor, sample_rate)
+        # wav_tensor = self.sox_effects(wav_tensor, sample_rate)
         if wav_tensor.numel() == 0:
             return None
         mel_tensor = self.log_melspectrogram(wav_tensor)
